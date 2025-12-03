@@ -1,12 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from contextlib import asynccontextmanager
+
+from app.configs.database import MongoDB
+from app.configs.settings import settings
+from app.controllers.task_controller import router as task_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup: Connect to MongoDB
+    await MongoDB.connect_to_database(
+        mongodb_uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB_NAME
+    )
+    yield
+    # Shutdown: Close MongoDB connection
+    await MongoDB.close_database_connection()
+
 
 # Create FastAPI application instance
 app = FastAPI(
     title="SQL Automation API",
-    description="FastAPI project for SQL automation",
-    version="1.0.0"
+    description="FastAPI skeleton project for SQL automation",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS
@@ -32,8 +52,8 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
-# Import and include routers here
-# Example: app.include_router(router, prefix="/api/v1", tags=["tag_name"])
+# Include routers
+app.include_router(task_router, prefix="/api/v1", tags=["tasks"])
 
 if __name__ == "__main__":
     uvicorn.run(

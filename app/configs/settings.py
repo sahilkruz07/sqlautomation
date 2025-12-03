@@ -16,9 +16,13 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # Database settings
+    # Database settings (SQL)
     DATABASE_URL: Optional[str] = None
     DB_ECHO: bool = False
+    
+    # MongoDB settings
+    MONGODB_URI: str = "mongodb://localhost:27017"  # Override with your MongoDB URI
+    MONGODB_DB_NAME: str = "sqlautomation"
     
     # Security settings
     SECRET_KEY: str = "your-secret-key-here-change-in-production"
