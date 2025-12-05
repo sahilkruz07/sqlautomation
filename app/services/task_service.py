@@ -1,22 +1,21 @@
 from typing import Optional, List
-from datetime import datetime
-from bson import ObjectId
 
-from app.models.task_model import TaskCreate, TaskResponse, TaskInDB
-from app.configs.database import get_task_master_collection
+from app.models.task_model import TaskCreate, TaskResponse
+from app.repositories.task_repository import TaskRepository
 
 
 class TaskService:
     """
     Service class for task-related business logic
+    Orchestrates operations between controllers and repositories
     """
     
     def __init__(self):
-        self.collection = get_task_master_collection()
+        self.task_repository = TaskRepository()
     
     async def create_task(self, task_data: TaskCreate) -> TaskResponse:
         """
-        Create a new task in the database
+        Create a new task
         
         Args:
             task_data: Task creation data
@@ -24,16 +23,11 @@ class TaskService:
         Returns:
             Created task response
         """
-        # Prepare task document
+        # Convert Pydantic model to dict
         task_dict = task_data.model_dump()
-        task_dict["created_date"] = datetime.utcnow()
-        task_dict["updated_date"] = None
         
-        # Insert into database
-        result = await self.collection.insert_one(task_dict)
-        
-        # Fetch the created task
-        created_task = await self.collection.find_one({"_id": result.inserted_id})
+        # Save to database via repository
+        created_task = await self.task_repository.save(task_dict)
         
         # Convert to response model
         return self._convert_to_response(created_task)
@@ -48,12 +42,8 @@ class TaskService:
         Returns:
             Task response or None if not found
         """
-        # Validate ObjectId
-        if not ObjectId.is_valid(task_id):
-            return None
-        
-        # Find task in database
-        task = await self.collection.find_one({"_id": ObjectId(task_id)})
+        # Find task via repository
+        task = await self.task_repository.find_by_id(task_id)
         
         if task is None:
             return None
@@ -72,9 +62,10 @@ class TaskService:
         Returns:
             List of task responses
         """
-        cursor = self.collection.find().skip(skip).limit(limit).sort("created_date", -1)
-        tasks = await cursor.to_list(length=limit)
+        # Find all tasks via repository
+        tasks = await self.task_repository.find_all(skip=skip, limit=limit)
         
+        # Convert to response models
         return [self._convert_to_response(task) for task in tasks]
     
     async def update_task(self, task_id: str, task_data: dict) -> Optional[TaskResponse]:
@@ -88,23 +79,14 @@ class TaskService:
         Returns:
             Updated task response or None if not found
         """
-        if not ObjectId.is_valid(task_id):
+        # Update via repository
+        updated_task = await self.task_repository.update(task_id, task_data)
+        
+        if updated_task is None:
             return None
         
-        # Add updated_date
-        task_data["updated_date"] = datetime.utcnow()
-        
-        # Update in database
-        result = await self.collection.find_one_and_update(
-            {"_id": ObjectId(task_id)},
-            {"$set": task_data},
-            return_document=True
-        )
-        
-        if result is None:
-            return None
-        
-        return self._convert_to_response(result)
+        # Convert to response model
+        return self._convert_to_response(updated_task)
     
     async def delete_task(self, task_id: str) -> bool:
         """
@@ -116,11 +98,34 @@ class TaskService:
         Returns:
             True if deleted, False otherwise
         """
-        if not ObjectId.is_valid(task_id):
-            return False
+        # Delete via repository
+        return await self.task_repository.delete(task_id)
+    
+    async def get_tasks_by_db_name(self, db_name: str) -> List[TaskResponse]:
+        """
+        Get all tasks for a specific database
         
-        result = await self.collection.delete_one({"_id": ObjectId(task_id)})
-        return result.deleted_count > 0
+        Args:
+            db_name: Database name
+            
+        Returns:
+            List of task responses
+        """
+        tasks = await self.task_repository.find_by_db_name(db_name)
+        return [self._convert_to_response(task) for task in tasks]
+    
+    async def get_tasks_by_user(self, created_by: str) -> List[TaskResponse]:
+        """
+        Get all tasks created by a specific user
+        
+        Args:
+            created_by: Username
+            
+        Returns:
+            List of task responses
+        """
+        tasks = await self.task_repository.find_by_created_by(created_by)
+        return [self._convert_to_response(task) for task in tasks]
     
     def _convert_to_response(self, task_doc: dict) -> TaskResponse:
         """
