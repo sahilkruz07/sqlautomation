@@ -18,7 +18,14 @@ class MongoDB:
             db_name: Database name (default: sqlautomation)
         """
         try:
-            cls.client = AsyncIOMotorClient(mongodb_uri)
+            # Configure TLS/SSL settings for MongoDB Atlas
+            # Note: tlsAllowInvalidCertificates=True is for development only
+            # For production, fix SSL certificates properly
+            cls.client = AsyncIOMotorClient(
+                mongodb_uri,
+                tlsAllowInvalidCertificates=True,  # Development workaround for macOS SSL issues
+                serverSelectionTimeoutMS=5000
+            )
             cls.database = cls.client[db_name]
             # Test the connection
             await cls.client.admin.command('ping')

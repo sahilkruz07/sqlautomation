@@ -12,7 +12,14 @@ class TaskRepository:
     """
     
     def __init__(self):
-        self.collection = get_task_master_collection()
+        self._collection = None
+    
+    @property
+    def collection(self):
+        """Lazy load collection to avoid initialization issues"""
+        if self._collection is None:
+            self._collection = get_task_master_collection()
+        return self._collection
     
     async def save(self, task_data: dict) -> dict:
         """
@@ -26,7 +33,7 @@ class TaskRepository:
         """
         # Add created_date timestamp
         task_data["created_date"] = datetime.utcnow()
-        task_data["updated_date"] = None
+        task_data["updated_date"] = datetime.utcnow()
         
         # Insert into database
         result = await self.collection.insert_one(task_data)

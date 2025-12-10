@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     DB_ECHO: bool = False
     
     # MongoDB settings
-    MONGODB_URI: str = "mongodb://localhost:27017"  # Override with your MongoDB URI
+    MONGODB_URI: str = "mongodb://localhost:27017"  # Override with environment variable
     MONGODB_DB_NAME: str = "sqlautomation"
     
     # Security settings
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS settings
-    ALLOWED_ORIGINS: list = ["*"]
+    ALLOWED_ORIGINS: str = "*"
     
     class Config:
         env_file = ".env"
