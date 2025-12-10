@@ -1,8 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Query
 from typing import List
+import logging
 
 from app.models.task_model import TaskCreate, TaskResponse
 from app.services.task_service import TaskService
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Create router instance
 router = APIRouter()
@@ -28,10 +32,13 @@ async def create_task(task_data: TaskCreate):
     Returns:
         Created task details
     """
+    logger.info(f"Controller: POST /tasks - Creating task for db_name={task_data.db_name}")
     try:
         task = await task_service.create_task(task_data)
+        logger.info(f"Controller: Task {task.task_id} created successfully")
         return task
     except Exception as e:
+        logger.error(f"Controller: Error creating task: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating task: {str(e)}"
@@ -54,14 +61,17 @@ async def get_task(task_id: str):
     Returns:
         Task details
     """
+    logger.info(f"Controller: GET /tasks/{task_id}")
     task = await task_service.get_task(task_id)
     
     if task is None:
+        logger.warning(f"Controller: Task {task_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with ID {task_id} not found"
         )
     
+    logger.debug(f"Controller: Returning task {task_id}")
     return task
 
 
@@ -85,10 +95,13 @@ async def get_all_tasks(
     Returns:
         List of tasks
     """
+    logger.info(f"Controller: GET /tasks - skip={skip}, limit={limit}")
     try:
         tasks = await task_service.get_all_tasks(skip=skip, limit=limit)
+        logger.info(f"Controller: Returning {len(tasks)} tasks")
         return tasks
     except Exception as e:
+        logger.error(f"Controller: Error retrieving tasks: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving tasks: {str(e)}"
@@ -112,14 +125,19 @@ async def update_task(task_id: str, task_data: dict):
     Returns:
         Updated task details
     """
+    logger.info(f"Controller: PUT /tasks/{task_id}")
+    logger.debug(f"Controller: Update data: {task_data}")
+    
     task = await task_service.update_task(task_id, task_data)
     
     if task is None:
+        logger.warning(f"Controller: Task {task_id} not found for update")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with ID {task_id} not found"
         )
     
+    logger.info(f"Controller: Task {task_id} updated successfully")
     return task
 
 
@@ -136,14 +154,17 @@ async def delete_task(task_id: str):
     Args:
         task_id: Task ID
     """
+    logger.info(f"Controller: DELETE /tasks/{task_id}")
     deleted = await task_service.delete_task(task_id)
     
     if not deleted:
+        logger.warning(f"Controller: Task {task_id} not found for deletion")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task with ID {task_id} not found"
         )
     
+    logger.info(f"Controller: Task {task_id} deleted successfully")
     return None
 
 
