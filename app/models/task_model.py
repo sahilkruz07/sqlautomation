@@ -42,7 +42,7 @@ class TaskUpdate(BaseModel):
 
 class TaskResponse(TaskBase):
     """Model for task response"""
-    task_id: str = Field(..., alias="_id", description="Task ID")
+    task_id: str = Field(..., description="Task ID (e.g., TSK-000001)")
     created_date: datetime = Field(..., description="Creation timestamp")
     updated_date: Optional[datetime] = Field(None, description="Last update timestamp")
     
@@ -52,7 +52,7 @@ class TaskResponse(TaskBase):
         json_encoders = {ObjectId: str}
         json_schema_extra = {
             "example": {
-                "task_id": "507f1f77bcf86cd799439011",
+                "task_id": "TSK-000001",
                 "task_description": "Generate sales report",
                 "db_name": "sales_db",
                 "sql_query": "SELECT * FROM sales WHERE date > '2024-01-01'",

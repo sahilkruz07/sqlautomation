@@ -49,7 +49,7 @@ async def get_task(task_id: str):
     Get a task by ID
     
     Args:
-        task_id: Task ID (MongoDB ObjectId)
+        task_id: Task ID (e.g., TSK-000001)
         
     Returns:
         Task details

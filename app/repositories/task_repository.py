@@ -2,7 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
 
-from app.configs.database import get_task_master_collection
+from app.configs.database import get_task_master_collection, get_counter_master_collection
 
 
 class TaskRepository:
@@ -13,6 +13,7 @@ class TaskRepository:
     
     def __init__(self):
         self._collection = None
+        self._counter_collection = None
     
     @property
     def collection(self):
@@ -20,6 +21,32 @@ class TaskRepository:
         if self._collection is None:
             self._collection = get_task_master_collection()
         return self._collection
+    
+    @property
+    def counter_collection(self):
+        """Lazy load counter collection to avoid initialization issues"""
+        if self._counter_collection is None:
+            self._counter_collection = get_counter_master_collection()
+        return self._counter_collection
+    
+    async def _get_next_task_id(self) -> str:
+        """
+        Generate next task ID by incrementing counter in counter_master
+        
+        Returns:
+            Task ID in format TSK-XXXXXX (e.g., TSK-000001)
+        """
+        # Atomically increment the counter and get the new value
+        result = await self.counter_collection.find_one_and_update(
+            {"counter_type": "TASK"},
+            {"$inc": {"counter_value": 1}},
+            return_document=True,
+            upsert=True  # Create if doesn't exist
+        )
+        
+        counter_value = result.get("counter_value", 1)
+        # Format as TSK-XXXXXX (6 digits with leading zeros)
+        return f"TSK-{counter_value:06d}"
     
     async def save(self, task_data: dict) -> dict:
         """
@@ -29,8 +56,12 @@ class TaskRepository:
             task_data: Task data to save
             
         Returns:
-            Created task document with _id
+            Created task document with task_id
         """
+        # Generate next task_id
+        task_id = await self._get_next_task_id()
+        task_data["task_id"] = task_id
+        
         # Add created_date timestamp
         task_data["created_date"] = datetime.utcnow()
         task_data["updated_date"] = datetime.utcnow()
@@ -47,17 +78,13 @@ class TaskRepository:
         Find a task by ID
         
         Args:
-            task_id: Task ID (MongoDB ObjectId as string)
+            task_id: Task ID (e.g., TSK-000001)
             
         Returns:
             Task document or None if not found
         """
-        # Validate ObjectId
-        if not ObjectId.is_valid(task_id):
-            return None
-        
-        # Find task in database
-        task = await self.collection.find_one({"_id": ObjectId(task_id)})
+        # Find task in database by task_id field
+        task = await self.collection.find_one({"task_id": task_id})
         return task
     
     async def find_all(self, skip: int = 0, limit: int = 100) -> List[dict]:
@@ -80,21 +107,18 @@ class TaskRepository:
         Update a task by ID
         
         Args:
-            task_id: Task ID
+            task_id: Task ID (e.g., TSK-000001)
             task_data: Updated task data
             
         Returns:
             Updated task document or None if not found
         """
-        if not ObjectId.is_valid(task_id):
-            return None
-        
         # Add updated_date timestamp
         task_data["updated_date"] = datetime.utcnow()
         
-        # Update in database
+        # Update in database using task_id field
         result = await self.collection.find_one_and_update(
-            {"_id": ObjectId(task_id)},
+            {"task_id": task_id},
             {"$set": task_data},
             return_document=True
         )
@@ -106,15 +130,12 @@ class TaskRepository:
         Delete a task by ID
         
         Args:
-            task_id: Task ID
+            task_id: Task ID (e.g., TSK-000001)
             
         Returns:
             True if deleted, False otherwise
         """
-        if not ObjectId.is_valid(task_id):
-            return False
-        
-        result = await self.collection.delete_one({"_id": ObjectId(task_id)})
+        result = await self.collection.delete_one({"task_id": task_id})
         return result.deleted_count > 0
     
     async def find_by_db_name(self, db_name: str) -> List[dict]:

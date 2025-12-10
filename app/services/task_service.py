@@ -37,7 +37,7 @@ class TaskService:
         Get a task by ID
         
         Args:
-            task_id: Task ID (MongoDB ObjectId as string)
+            task_id: Task ID (e.g., TSK-000001)
             
         Returns:
             Task response or None if not found
@@ -137,5 +137,5 @@ class TaskService:
         Returns:
             TaskResponse model
         """
-        task_doc["_id"] = str(task_doc["_id"])
+        # No need to convert _id anymore, task_id is already in the document
         return TaskResponse(**task_doc)

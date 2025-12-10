@@ -67,9 +67,16 @@ class MongoDB:
 class Collections:
     """MongoDB collection names"""
     TASK_MASTER = "task_master"
+    COUNTER_MASTER = "counter_master"
 
 
 # Helper function to get task_master collection
 def get_task_master_collection():
     """Get task_master collection"""
     return MongoDB.get_collection(Collections.TASK_MASTER)
+
+
+# Helper function to get counter_master collection
+def get_counter_master_collection():
+    """Get counter_master collection"""
+    return MongoDB.get_collection(Collections.COUNTER_MASTER)
