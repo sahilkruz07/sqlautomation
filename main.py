@@ -2,10 +2,34 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
+import logging
+import sys
 
 from app.configs.database import MongoDB
 from app.configs.settings import settings
 from app.controllers.task_controller import router as task_router
+from app.controllers.run_controller import router as run_router
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Console output
+        logging.FileHandler('app.log')  # File output
+    ]
+)
+
+# Set specific logger levels
+logging.getLogger('app.controllers.task_controller').setLevel(logging.INFO)
+logging.getLogger('app.services.task_service').setLevel(logging.INFO)
+logging.getLogger('app.repositories.task_repository').setLevel(logging.INFO)
+logging.getLogger('app.controllers.run_controller').setLevel(logging.INFO)
+logging.getLogger('app.services.run_service').setLevel(logging.INFO)
+logging.getLogger('app.repositories.env_config_repository').setLevel(logging.INFO)
+
+# Reduce uvicorn access log verbosity (optional)
+logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -54,6 +78,7 @@ async def health_check():
 
 # Include routers
 app.include_router(task_router, prefix="/api/v1", tags=["tasks"])
+app.include_router(run_router, prefix="/api/v1", tags=["run"])
 
 if __name__ == "__main__":
     uvicorn.run(

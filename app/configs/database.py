@@ -68,6 +68,7 @@ class Collections:
     """MongoDB collection names"""
     TASK_MASTER = "task_master"
     COUNTER_MASTER = "counter_master"
+    ENV_CONFIG = "env_config"
 
 
 # Helper function to get task_master collection
@@ -80,3 +81,9 @@ def get_task_master_collection():
 def get_counter_master_collection():
     """Get counter_master collection"""
     return MongoDB.get_collection(Collections.COUNTER_MASTER)
+
+
+# Helper function to get env_config collection
+def get_env_config_collection():
+    """Get env_config collection"""
+    return MongoDB.get_collection(Collections.ENV_CONFIG)
