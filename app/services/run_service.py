@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import logging
 import time
 
@@ -65,7 +65,15 @@ class RunService:
                 detail=f"Configuration for database '{task.db_name}' in environment '{request.environment}' not found"
             )
 
-        # 3. Execute Query (Actual Execution)
+        # 3. Fetch Old Data for Rollback (if strictly UPDATE/DELETE)
+        old_data = []
+        try:
+            if task.query_type in ["UPDATE", "DELETE"]:
+                old_data = await self._fetch_rollback_data(task.sql_query, connection_string, request.parameters)
+        except Exception as e:
+            logger.warning(f"RunService: Failed to fetch old data for rollback: {str(e)}")
+
+        # 4. Execute Query (Actual Execution)
         # Uses SQLAlchemy with async driver
         try:
             results, row_count = await self._execute_query(task.sql_query, connection_string, request.parameters)
@@ -82,24 +90,53 @@ class RunService:
             elif results:
                  message = f"Query executed successfully. Rows returned: {len(results)}"
             
+            # 5. Generate Rollback Query
+            rollback_query = self._generate_rollback_query(task.query_type, task.sql_query, request.parameters, old_data)
+
             # Save run execution details to run_master
             return await self._save_success_run(
                 request=request,
                 message=message,
                 data=results,
-                execution_time=execution_time
+                execution_time=execution_time,
+                rollback_query=rollback_query
             )
             
         except Exception as e:
             logger.error(f"RunService: Execution failed: {str(e)}", exc_info=True)
             
+            # Attempt to generate rollback query even on failure if we have old data
+            rollback_query = self._generate_rollback_query(task.query_type, task.sql_query, request.parameters, old_data)
+            
             # Record failed run
-            error_detail = await self._save_failed_run(request, e, start_time)
+            error_detail = await self._save_failed_run(request, e, start_time, rollback_query)
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=error_detail
             )
+
+    async def get_run(self, run_task_id: str) -> Optional[RunResponse]:
+        """
+        Get run details by ID
+        """
+        run_doc = await self.run_repository.find_by_id(run_task_id)
+        if not run_doc:
+            return None
+        return RunResponse(**run_doc)
+
+    async def get_all_runs(self, skip: int = 0, limit: int = 100) -> List[RunResponse]:
+        """
+        Get all runs with pagination
+        """
+        run_docs = await self.run_repository.find_all(skip=skip, limit=limit)
+        return [RunResponse(**doc) for doc in run_docs]
+
+    async def delete_run(self, run_task_id: str) -> bool:
+        """
+        Delete a run record by ID
+        """
+        return await self.run_repository.delete(run_task_id)
 
     async def _get_connection_string(self, db_name: str, environment: str) -> str:
         """
@@ -127,6 +164,173 @@ class RunService:
             logger.error(f"Error constructing connection string: {str(e)}")
             return None
 
+    async def _fetch_rollback_data(self, sql_query: str, connection_string: str, params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """
+        Execute a SELECT query to fetch data before it is modified.
+        Used for generating rollback queries for UPDATE/DELETE.
+        """
+        sql = sql_query.strip().upper()
+        table_name = ""
+        where_clause = ""
+        
+        # Simple extraction logic
+        if sql.startswith("DELETE"):
+            match = re.search(r"DELETE\s+FROM\s+([^\s]+)\s+(WHERE\s+.+)", sql, re.IGNORECASE | re.DOTALL)
+            if match:
+                table_name = match.group(1)
+                where_clause = match.group(2)
+        elif sql.startswith("UPDATE"):
+             match = re.search(r"UPDATE\s+([^\s]+)\s+SET\s+.+\s+(WHERE\s+.+)", sql, re.IGNORECASE | re.DOTALL)
+             if match:
+                table_name = match.group(1)
+                where_clause = match.group(2)
+                
+        if table_name and where_clause:
+            select_query = f"SELECT * FROM {table_name} {where_clause}"
+            logger.info(f"RunService: Fetching rollback data: {select_query}")
+            # Reuse _execute_query but ignore row count (since it's a select)
+            data, _ = await self._execute_query(select_query, connection_string, params)
+            logger.info(f"RunService: Fetched {len(data)} rows for rollback generation")
+            return data
+            
+        return []
+
+    def _generate_rollback_query(self, query_type: str, sql_query: str, params: Dict[str, Any] = None, old_data: List[Dict[str, Any]] = None) -> str:
+        """
+        Generate a rollback query based on the task query type.
+        """
+        query_type = query_type.upper()
+        params = params or {}
+        old_data = old_data or []
+        
+        try:
+            if query_type == "SELECT":
+                return ""
+                
+            elif query_type == "INSERT":
+                # Logic: INSERT INTO table (col1, col2) VALUES (val1, val2), (val3, val4)
+                # Rollback: DELETE FROM table WHERE col1 IN (val1, val3)
+                
+                sql = sql_query.strip()
+                # Regex to find table, columns, and the values part
+                # Format: INSERT INTO table (col1, col2...) VALUES ...
+                match = re.search(r"INSERT\s+INTO\s+([^\s\(]+)\s*\((.+?)\)\s*VALUES\s*(.+)", sql, re.IGNORECASE | re.DOTALL)
+                
+                if match:
+                    table_name = match.group(1)
+                    columns_str = match.group(2)
+                    rest_of_query = match.group(3) # The VALUES part
+                    
+                    # Get the first column name
+                    first_col = columns_str.split(",")[0].strip()
+                    
+                    # Extract values for the first column
+                    # This is tricky because of potentially multiple rows: (v1, v2), (v3, v4)
+                    # and values might contain commas (strings). 
+                    # Naive split by ")," might work for simple cases.
+                    
+                    # Normalize the values string
+                    values_part = rest_of_query.strip()
+                    if values_part.endswith(";"):
+                        values_part = values_part[:-1]
+                        
+                    # Split into row groups: (val1, val2), (val3, val4)
+                    # Simple regex to capture content inside parens ()
+                    row_values_groups = re.findall(r"\((.+?)\)", values_part)
+                    
+                    extracted_values = []
+                    for row_str in row_values_groups:
+                        # row_str is like "'SQL_ID_1', 'Desc', 'true'"
+                        # We want the first value.
+                        # Naive split by comma, respecting quotes is hard with simple split.
+                        # Assuming simple CSV for now.
+                        first_val = row_str.split(",")[0].strip()
+                        extracted_values.append(first_val)
+                        
+                    if extracted_values:
+                        joined_values = ", ".join(extracted_values)
+                        return f"DELETE FROM {table_name} WHERE {first_col} IN ({joined_values});"
+                        
+                return "-- Could not generate rollback for INSERT (Complex parsing required)"
+
+            elif query_type == "DELETE":
+                # Rollback DELETE: INSERT INTO table (cols) VALUES (old_dat)
+                if not old_data:
+                     return "-- No old data found to rollback DELETE"
+                
+                # Construct INSERT statements
+                # We need table name again
+                sql = sql_query.strip()
+                match = re.search(r"DELETE\s+FROM\s+([^\s]+)", sql, re.IGNORECASE)
+                table_name = match.group(1) if match else "UNKNOWN_TABLE"
+                
+                inserts = []
+                for row in old_data:
+                    # Construct simple INSERT based on dict keys
+                    # Quote strings, handle None, etc.
+                    cols = ", ".join(row.keys())
+                    
+                    vals = []
+                    for v in row.values():
+                        vals.append(self._format_sql_value(v))
+                            
+                    val_str = ", ".join(vals)
+                    inserts.append(f"INSERT INTO {table_name} ({cols}) VALUES ({val_str});")
+                
+                return "\n".join(inserts)
+                
+            elif query_type == "UPDATE":
+                # Rollback UPDATE: UPDATE table SET col=old_val WHERE first_col = val
+                if not old_data:
+                     return "-- No old data found to rollback UPDATE"
+                
+                sql = sql_query.strip()
+                match = re.search(r"UPDATE\s+([^\s]+)", sql, re.IGNORECASE)
+                table_name = match.group(1) if match else "UNKNOWN_TABLE"
+                
+                # Get the first column name from the first row of data
+                first_col = list(old_data[0].keys())[0] if old_data else None
+                
+                updates = []
+                for row in old_data:
+                    set_clause = []
+                    for k, v in row.items():
+                         val = self._format_sql_clause(k, v)
+                         set_clause.append(val)
+                    set_str = ", ".join(set_clause)
+                    
+                    if first_col:
+                        id_val = row[first_col]
+                        id_val_str = self._format_sql_value(id_val)
+                        updates.append(f"UPDATE {table_name} SET {set_str} WHERE {first_col} = {id_val_str};")
+                    else:
+                        updates.append(f"-- Warning: No columns found to identify row. UPDATE {table_name} SET {set_str} WHERE ...;")
+                        
+                return "\n".join(updates)
+                
+            return ""
+        except Exception as e:
+            logger.error(f"Error generating rollback query: {str(e)}")
+            return f"-- Error generating rollback: {str(e)}"
+
+    def _format_sql_value(self, v: Any) -> str:
+        """
+        Format a Python value for inclusion in a raw SQL string.
+        """
+        if v is None:
+            return "NULL"
+        if isinstance(v, (int, float)):
+            return str(v)
+        # For strings, datetimes, and everything else, wrap in single quotes
+        val_str = str(v).replace("'", "''") # Basic escaping for single quotes
+        return f"'{val_str}'"
+
+    def _format_sql_clause(self, column: str, value: Any) -> str:
+        """
+        Format a 'column = value' clause for SQL.
+        """
+        return f"{column} = {self._format_sql_value(value)}"
+
     def _inject_limit_if_needed(self, query: str) -> str:
         """
         Inject LIMIT clause if missing for SELECT queries.
@@ -148,7 +352,7 @@ class RunService:
              
         return query
 
-    async def _save_success_run(self, request: RunRequest, message: str, data: List, execution_time: float) -> RunResponse:
+    async def _save_success_run(self, request: RunRequest, message: str, data: List, execution_time: float, rollback_query: str = "") -> RunResponse:
         """
         Helper to construct response and save valid/successful run details.
         Returns the final RunResponse with generated run_task_id.
@@ -159,14 +363,17 @@ class RunService:
             environment=request.environment,
             message=message,
             data=data,
+            rollback_query=rollback_query,
+            created_by=request.created_by,
             execution_time_ms=execution_time
         )
 
         try:
             # Convert Pydantic model to dict for storage
             run_doc = response_data.model_dump()
-            # Add request parameters for context if needed
+            # Add request parameters and created_by for context
             run_doc["request_parameters"] = request.parameters
+            run_doc["created_by"] = request.created_by
             
             saved_run = await self.run_repository.save(run_doc)
             
@@ -180,7 +387,7 @@ class RunService:
             
         return response_data
 
-    async def _save_failed_run(self, request: RunRequest, error: Exception, start_time: float) -> str:
+    async def _save_failed_run(self, request: RunRequest, error: Exception, start_time: float, rollback_query: str = "") -> str:
         """
         Helper to save failed run details.
         Returns the formatted error detail string (including run_task_id).
@@ -193,8 +400,10 @@ class RunService:
                 "environment": request.environment,
                 "message": f"Execution failed: {str(error)}",
                 "data": None,
+                "rollback_query": rollback_query,
                 "execution_time_ms": execution_time,
-                "request_parameters": request.parameters
+                "request_parameters": request.parameters,
+                "created_by": request.created_by
             }
             
             saved_run = await self.run_repository.save(failed_run_data)

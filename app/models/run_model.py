@@ -8,6 +8,7 @@ class RunRequest(BaseModel):
     task_id: str = Field(..., description="The ID of the task to run (e.g., TSK-000001)")
     environment: str = Field(..., description="The target environment (e.g., DEV, QA, PROD)")
     parameters: Optional[Dict[str, Any]] = Field(None, description="Optional parameters for the SQL query")
+    created_by: str = Field(..., description="The user who is running the task")
 
 class RunResponse(BaseModel):
     """
@@ -19,4 +20,6 @@ class RunResponse(BaseModel):
     environment: str
     message: str
     data: Optional[List[Dict[str, Any]]] = None
+    rollback_query: Optional[str] = ""
+    created_by: Optional[str] = None
     execution_time_ms: float

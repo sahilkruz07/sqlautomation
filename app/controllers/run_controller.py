@@ -45,3 +45,45 @@ async def run_task(request: RunRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error during execution: {str(e)}"
         )
+
+@router.get(
+    "/run/{run_task_id}",
+    response_model=RunResponse,
+    summary="Get run details",
+    description="Retrieve details of a specific task run by its Run Task ID"
+)
+async def get_run_details(run_task_id: str):
+    """Get details of a specific run"""
+    run = await run_service.get_run(run_task_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_task_id} not found"
+        )
+    return run
+
+@router.get(
+    "/run",
+    response_model=list[RunResponse],
+    summary="Get all runs",
+    description="Retrieve history of all task runs with pagination"
+)
+async def get_all_runs(skip: int = 0, limit: int = 100):
+    """Get history of all runs"""
+    return await run_service.get_all_runs(skip=skip, limit=limit)
+
+@router.delete(
+    "/run/{run_task_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete run record",
+    description="Remove a specific task run record from history"
+)
+async def delete_run(run_task_id: str):
+    """Delete a specific run record"""
+    deleted = await run_service.delete_run(run_task_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_task_id} not found"
+        )
+    return {"status": "success", "message": f"Run {run_task_id} deleted successfully"}

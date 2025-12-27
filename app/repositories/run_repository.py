@@ -87,3 +87,35 @@ class RunRepository:
         except Exception as e:
             logger.error(f"Error saving run execution: {str(e)}", exc_info=True)
             raise
+
+    async def find_by_id(self, run_task_id: str) -> Optional[dict]:
+        """
+        Find a run by ID
+        """
+        try:
+            return await self.collection.find_one({"run_task_id": run_task_id})
+        except Exception as e:
+            logger.error(f"Error finding run {run_task_id}: {str(e)}")
+            raise
+
+    async def find_all(self, skip: int = 0, limit: int = 100) -> List[dict]:
+        """
+        Find all runs with pagination
+        """
+        try:
+            cursor = self.collection.find().skip(skip).limit(limit).sort("created_date", -1)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Error finding all runs: {str(e)}")
+            raise
+
+    async def delete(self, run_task_id: str) -> bool:
+        """
+        Delete a run by ID
+        """
+        try:
+            result = await self.collection.delete_one({"run_task_id": run_task_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logger.error(f"Error deleting run {run_task_id}: {str(e)}")
+            raise
