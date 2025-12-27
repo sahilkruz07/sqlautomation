@@ -14,6 +14,7 @@ class RunResponse(BaseModel):
     Response model for a task run
     """
     task_id: str
+    run_task_id: Optional[str] = None
     status: str
     environment: str
     message: str

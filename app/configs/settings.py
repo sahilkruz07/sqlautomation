@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Database settings (SQL)
     DATABASE_URL: Optional[str] = None
     DB_ECHO: bool = False
+    SQL_QUERY_ROW_LIMIT: int = 25
     
     # MongoDB settings
     MONGODB_URI: str = "mongodb://localhost:27017"  # Override with environment variable

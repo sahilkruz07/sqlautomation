@@ -1,5 +1,6 @@
 from typing import Optional, List
 import logging
+from fastapi import HTTPException, status
 
 from app.models.task_model import TaskCreate, TaskResponse
 from app.repositories.task_repository import TaskRepository
@@ -28,6 +29,19 @@ class TaskService:
             Created task response
         """
         logger.info(f"Service: Creating task for db_name={task_data.db_name}, created_by={task_data.created_by}")
+        
+        # Validate query_type and sql_query match
+        query_type = task_data.query_type.upper()
+        sql_query = task_data.sql_query.strip().upper()
+        
+        if not sql_query.startswith(query_type):
+            error_msg = f"Query type mismatch: SQL query must start with {query_type}"
+            logger.error(f"Service: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+            
         try:
             # Convert Pydantic model to dict
             task_dict = task_data.model_dump()

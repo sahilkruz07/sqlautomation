@@ -69,6 +69,7 @@ class Collections:
     TASK_MASTER = "task_master"
     COUNTER_MASTER = "counter_master"
     ENV_CONFIG = "env_config"
+    RUN_MASTER = "run_master"
 
 
 # Helper function to get task_master collection
@@ -87,3 +88,9 @@ def get_counter_master_collection():
 def get_env_config_collection():
     """Get env_config collection"""
     return MongoDB.get_collection(Collections.ENV_CONFIG)
+
+
+# Helper function to get run_master collection
+def get_run_master_collection():
+    """Get run_master collection"""
+    return MongoDB.get_collection(Collections.RUN_MASTER)
