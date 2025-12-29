@@ -83,7 +83,7 @@ class TaskService:
             logger.error(f"Service: Error getting task {task_id}: {str(e)}", exc_info=True)
             raise
     
-    async def get_all_tasks(self, skip: int = 0, limit: int = 100) -> List[TaskResponse]:
+    async def get_all_tasks(self, skip: int = 0, limit: int = 100, search: str = None) -> List[TaskResponse]:
         """
         Get all tasks with pagination
         
@@ -97,7 +97,7 @@ class TaskService:
         logger.debug(f"Service: Getting all tasks with skip={skip}, limit={limit}")
         try:
             # Find all tasks via repository
-            tasks = await self.task_repository.find_all(skip=skip, limit=limit)
+            tasks = await self.task_repository.find_all(skip=skip, limit=limit, search=search)
             
             # Convert to response models
             responses = [self._convert_to_response(task) for task in tasks]

@@ -1,5 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
+from app.utils.date_utils import get_now_ist
 import logging
 
 from app.configs.database import get_run_master_collection, get_counter_master_collection
@@ -37,7 +38,7 @@ class RunRepository:
         Generate next run task ID by incrementing counter in counter_master
         
         Returns:
-            Run Task ID in format RTSK_XXXXXX (e.g., RTSK_000001)
+            Run Task ID in format RTSK-XXXXXX (e.g., RTSK-000001)
         """
         try:
             logger.debug("Generating next run task ID from counter_master")
@@ -50,8 +51,8 @@ class RunRepository:
             )
             
             counter_value = result.get("counter_value", 1)
-            # Format as RTSK_XXXXXX (6 digits with leading zeros)
-            run_task_id = f"RTSK_{counter_value:06d}"
+            # Format as RTSK-XXXXXX (6 digits with leading zeros)
+            run_task_id = f"RTSK-{counter_value:06d}"
             logger.info(f"Generated new run task ID: {run_task_id}")
             return run_task_id
         except Exception as e:
@@ -74,7 +75,7 @@ class RunRepository:
             run_data["run_task_id"] = run_task_id
             
             # Add timestamps
-            run_data["created_date"] = datetime.utcnow()
+            run_data["created_date"] = get_now_ist()
             
             logger.debug(f"Inserting run {run_task_id} into database")
             # Insert into database
@@ -98,12 +99,27 @@ class RunRepository:
             logger.error(f"Error finding run {run_task_id}: {str(e)}")
             raise
 
-    async def find_all(self, skip: int = 0, limit: int = 100) -> List[dict]:
+    async def find_all(self, skip: int = 0, limit: int = 100, search: str = None) -> List[dict]:
         """
-        Find all runs with pagination
+        Find all runs with pagination and optional search
         """
         try:
-            cursor = self.collection.find().skip(skip).limit(limit).sort("created_date", -1)
+            query = {}
+            if search:
+                # Search across multiple fields using regex
+                search_regex = {"$regex": search, "$options": "i"}
+                query = {
+                    "$or": [
+                        {"run_task_id": search_regex},
+                        {"task_id": search_regex},
+                        {"status": search_regex},
+                        {"environment": search_regex},
+                        {"created_by": search_regex}
+                    ]
+                }
+
+            logger.debug(f"Finding runs with query={query}, skip={skip}, limit={limit}")
+            cursor = self.collection.find(query).sort([("created_date", -1), ("run_task_id", -1)]).skip(skip).limit(limit)
             return await cursor.to_list(length=limit)
         except Exception as e:
             logger.error(f"Error finding all runs: {str(e)}")

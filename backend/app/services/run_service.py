@@ -96,6 +96,7 @@ class RunService:
             # Save run execution details to run_master
             return await self._save_success_run(
                 request=request,
+                task=task,
                 message=message,
                 data=results,
                 execution_time=execution_time,
@@ -109,7 +110,7 @@ class RunService:
             rollback_query = self._generate_rollback_query(task.query_type, task.sql_query, request.parameters, old_data)
             
             # Record failed run
-            error_detail = await self._save_failed_run(request, e, start_time, rollback_query)
+            error_detail = await self._save_failed_run(request, task, e, start_time, rollback_query)
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -125,11 +126,11 @@ class RunService:
             return None
         return RunResponse(**run_doc)
 
-    async def get_all_runs(self, skip: int = 0, limit: int = 100) -> List[RunResponse]:
+    async def get_all_runs(self, skip: int = 0, limit: int = 100, search: str = None) -> List[RunResponse]:
         """
         Get all runs with pagination
         """
-        run_docs = await self.run_repository.find_all(skip=skip, limit=limit)
+        run_docs = await self.run_repository.find_all(skip=skip, limit=limit, search=search)
         return [RunResponse(**doc) for doc in run_docs]
 
     async def delete_run(self, run_task_id: str) -> bool:
@@ -352,7 +353,7 @@ class RunService:
              
         return query
 
-    async def _save_success_run(self, request: RunRequest, message: str, data: List, execution_time: float, rollback_query: str = "") -> RunResponse:
+    async def _save_success_run(self, request: RunRequest, task: Any, message: str, data: List, execution_time: float, rollback_query: str = "") -> RunResponse:
         """
         Helper to construct response and save valid/successful run details.
         Returns the final RunResponse with generated run_task_id.
@@ -364,6 +365,8 @@ class RunService:
             message=message,
             data=data,
             rollback_query=rollback_query,
+            task_description=task.task_description,
+            sql_query=task.sql_query,
             created_by=request.created_by,
             execution_time_ms=execution_time
         )
@@ -377,9 +380,12 @@ class RunService:
             
             saved_run = await self.run_repository.save(run_doc)
             
-            # Update response with the generated run_task_id
-            if saved_run and "run_task_id" in saved_run:
-                response_data.run_task_id = saved_run["run_task_id"]
+            # Update response with the generated run_task_id and created_date
+            if saved_run:
+                if "run_task_id" in saved_run:
+                    response_data.run_task_id = saved_run["run_task_id"]
+                if "created_date" in saved_run:
+                    response_data.created_date = saved_run["created_date"]
                 
         except Exception as e:
             # Log error but don't fail the request if logging fails
@@ -387,7 +393,7 @@ class RunService:
             
         return response_data
 
-    async def _save_failed_run(self, request: RunRequest, error: Exception, start_time: float, rollback_query: str = "") -> str:
+    async def _save_failed_run(self, request: RunRequest, task: Any, error: Exception, start_time: float, rollback_query: str = "") -> str:
         """
         Helper to save failed run details.
         Returns the formatted error detail string (including run_task_id).
@@ -401,6 +407,8 @@ class RunService:
                 "message": f"Execution failed: {str(error)}",
                 "data": None,
                 "rollback_query": rollback_query,
+                "task_description": task.task_description if task else None,
+                "sql_query": task.sql_query if task else None,
                 "execution_time_ms": execution_time,
                 "request_parameters": request.parameters,
                 "created_by": request.created_by

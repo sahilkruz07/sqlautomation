@@ -83,7 +83,8 @@ async def get_task(task_id: str):
 )
 async def get_all_tasks(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return")
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    search: str = Query(None, description="Global search query across multiple fields")
 ):
     """
     Get all tasks with pagination
@@ -97,7 +98,7 @@ async def get_all_tasks(
     """
     logger.info(f"Controller: GET /tasks - skip={skip}, limit={limit}")
     try:
-        tasks = await task_service.get_all_tasks(skip=skip, limit=limit)
+        tasks = await task_service.get_all_tasks(skip=skip, limit=limit, search=search)
         logger.info(f"Controller: Returning {len(tasks)} tasks")
         return tasks
     except Exception as e:

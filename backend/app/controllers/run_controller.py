@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 import logging
 
 from app.models.run_model import RunRequest, RunResponse
@@ -68,9 +68,13 @@ async def get_run_details(run_task_id: str):
     summary="Get all runs",
     description="Retrieve history of all task runs with pagination"
 )
-async def get_all_runs(skip: int = 0, limit: int = 100):
+async def get_all_runs(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    search: str = Query(None, description="Global search query across multiple fields")
+):
     """Get history of all runs"""
-    return await run_service.get_all_runs(skip=skip, limit=limit)
+    return await run_service.get_all_runs(skip=skip, limit=limit, search=search)
 
 @router.delete(
     "/run/{run_task_id}",

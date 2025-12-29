@@ -1,5 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
+from app.utils.date_utils import get_now_ist
 from bson import ObjectId
 import logging
 
@@ -77,8 +78,8 @@ class TaskRepository:
             task_data["task_id"] = task_id
             
             # Add created_date timestamp
-            task_data["created_date"] = datetime.utcnow()
-            task_data["updated_date"] = datetime.utcnow()
+            task_data["created_date"] = get_now_ist()
+            task_data["updated_date"] = get_now_ist()
             
             logger.debug(f"Inserting task {task_id} into database")
             # Insert into database
@@ -115,20 +116,35 @@ class TaskRepository:
             logger.error(f"Error finding task {task_id}: {str(e)}", exc_info=True)
             raise
     
-    async def find_all(self, skip: int = 0, limit: int = 100) -> List[dict]:
+    async def find_all(self, skip: int = 0, limit: int = 100, search: str = None) -> List[dict]:
         """
-        Find all tasks with pagination
+        Find all tasks with pagination and optional search
         
         Args:
             skip: Number of records to skip
             limit: Maximum number of records to return
+            search: Search query string
             
         Returns:
             List of task documents
         """
         try:
-            logger.debug(f"Finding all tasks with skip={skip}, limit={limit}")
-            cursor = self.collection.find().skip(skip).limit(limit).sort("created_date", -1)
+            query = {}
+            if search:
+                # Search across multiple fields using regex
+                search_regex = {"$regex": search, "$options": "i"}
+                query = {
+                    "$or": [
+                        {"task_id": search_regex},
+                        {"task_description": search_regex},
+                        {"db_name": search_regex},
+                        {"query_type": search_regex},
+                        {"created_by": search_regex}
+                    ]
+                }
+
+            logger.debug(f"Finding tasks with query={query}, skip={skip}, limit={limit}")
+            cursor = self.collection.find(query).sort([("created_date", -1), ("task_id", -1)]).skip(skip).limit(limit)
             tasks = await cursor.to_list(length=limit)
             logger.info(f"Retrieved {len(tasks)} tasks")
             return tasks
@@ -152,7 +168,7 @@ class TaskRepository:
             logger.debug(f"Update data: {task_data}")
             
             # Add updated_date timestamp
-            task_data["updated_date"] = datetime.utcnow()
+            task_data["updated_date"] = get_now_ist()
             
             # Update in database using task_id field
             result = await self.collection.find_one_and_update(

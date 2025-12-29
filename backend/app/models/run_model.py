@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Any, Dict, List
+from datetime import datetime
 
 class RunRequest(BaseModel):
     """
@@ -21,5 +22,8 @@ class RunResponse(BaseModel):
     message: str
     data: Optional[List[Dict[str, Any]]] = None
     rollback_query: Optional[str] = ""
+    task_description: Optional[str] = None
+    sql_query: Optional[str] = None
     created_by: Optional[str] = None
     execution_time_ms: float
+    created_date: Optional[datetime] = None
